@@ -1,0 +1,3 @@
+[submodule "original"]
+	path = original
+	url = https://nikolai.schlegel@github.com/pdewacht/oberon-risc-emu.git
