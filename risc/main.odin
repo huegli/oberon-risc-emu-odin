@@ -1,11 +1,15 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "vendor:sdl2"
 
 RISC_FRAMEBUFFER_WIDTH :: 1024
 RISC_FRAMEBUFFER_HEIGHT :: 768
+
+MAX_WIDTH :: 2048
+MAX_HEIGHT :: 2048
 
 main :: proc() {
 
@@ -28,17 +32,17 @@ main :: proc() {
 	sdl2.SetHint(sdl2.HINT_RENDER_SCALE_QUALITY, "best")
 
 	window_flags := sdl2.WINDOW_HIDDEN
-	display := 0
+	display: i32 = 0
 
 	if fullscreen {
-		window_flags |= sdl2.WINDOW_FULLSCREEN
-		display = 0 // best_display(&risc_rect)
+		window_flags |= sdl2.WINDOW_FULLSCREEN_DESKTOP
+		display = best_display(&risc_rect)
 	}
 	if zoom == 0 {
 		bounds: sdl2.Rect
-		if sdl2.GetDisplayUsableBounds(i32(display), &bounds) == 0 &&
+		if sdl2.GetDisplayBounds(display, &bounds) == 0 &&
 		   bounds.h >= risc_rect.h * 2 &&
-		   bounds.h >= risc_rect.h * 2 {
+		   bounds.w >= risc_rect.w * 2 {
 			zoom = 2
 		} else {
 			zoom = 1
@@ -47,8 +51,8 @@ main :: proc() {
 
 	window: ^sdl2.Window = sdl2.CreateWindow(
 		"Project Oberon",
-		sdl2.WINDOWPOS_UNDEFINED,
-		sdl2.WINDOWPOS_UNDEFINED,
+		sdl2.WINDOWPOS_UNDEFINED_DISPLAY(display),
+		sdl2.WINDOWPOS_UNDEFINED_DISPLAY(display),
 		i32(f64(risc_rect.w) * zoom),
 		i32(f64(risc_rect.h) * zoom),
 		window_flags,
@@ -71,13 +75,19 @@ main :: proc() {
 		renderer,
 		u32(sdl2.PixelFormatEnum.ARGB8888),
 		sdl2.TextureAccess.STREAMING,
-		640,
-		480,
+		risc_rect.w,
+		risc_rect.h,
 	)
+	if (texture == nil) {
+		fmt.printf("Could not create texture: %s", sdl2.GetError())
+		os.exit(1)
+	}
 	defer sdl2.DestroyTexture(texture)
 
-	display_rect := risc_rect
+	display_rect: sdl2.Rect
+	display_scale := scale_display(window, &risc_rect, &display_rect)
 
+	update_texture(texture, &risc_rect)
 	sdl2.ShowWindow(window)
 	sdl2.RenderClear(renderer)
 	sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
@@ -102,6 +112,7 @@ main :: proc() {
 			}
 		}
 
+		update_texture(texture, &risc_rect)
 		sdl2.RenderClear(renderer)
 		sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
 		sdl2.RenderPresent(renderer)
@@ -110,4 +121,69 @@ main :: proc() {
 	}
 
 
+}
+
+best_display :: proc(rect: ^sdl2.Rect) -> i32 {
+	best: i32 = 0
+	display_cnt := sdl2.GetNumVideoDisplays()
+	for i: i32 = 0; i < display_cnt; i += 1 {
+		bounds: sdl2.Rect
+		if sdl2.GetDisplayUsableBounds(i, &bounds) == 0 &&
+		   bounds.h == rect.h &&
+		   bounds.w == rect.w {
+			best = i
+			if bounds.w == rect.w {
+				break
+			}
+		}
+	}
+	return best
+}
+
+scale_display :: proc(
+	window: ^sdl2.Window,
+	risc_rect: ^sdl2.Rect,
+	display_rect: ^sdl2.Rect,
+) -> f64 {
+
+	win_w, win_h: i32
+	sdl2.GetWindowSize(window, &win_w, &win_h)
+
+	oberon_aspect: f64 = f64(risc_rect.w) / f64(risc_rect.h)
+	window_aspect: f64 = f64(win_w) / f64(win_h)
+
+	scale: f64 = 0
+	if oberon_aspect > window_aspect {
+		scale = f64(win_w) / f64(risc_rect.w)
+	} else {
+		scale = f64(win_h) / f64(risc_rect.h)
+	}
+
+	w: i32 = i32(math.ceil_f64(f64(risc_rect.w) * scale))
+	h: i32 = i32(math.ceil_f64(f64(risc_rect.h) * scale))
+	display_rect^ = {
+		x = (win_w - w) / 2,
+		y = (win_h - h) / 2,
+		w = w,
+		h = h,
+	}
+
+	return scale
+}
+
+pixel_buf: [MAX_WIDTH * MAX_HEIGHT]u32
+
+update_texture :: proc(texture: ^sdl2.Texture, risc_rect: ^sdl2.Rect) {
+
+	for i := 0; i < 2048 * 2048; i += 1 {
+		pixel_buf[i] = 0xFFFF0000
+	}
+
+	rect: sdl2.Rect = {
+		x = 0,
+		y = 0,
+		w = risc_rect.w,
+		h = risc_rect.h,
+	}
+	sdl2.UpdateTexture(texture, &rect, raw_data(&pixel_buf), rect.w * 4)
 }
