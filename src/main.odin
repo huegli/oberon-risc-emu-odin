@@ -1,11 +1,9 @@
-package main
+package risc
 
 import "core:fmt"
 import "core:math"
 import "core:os"
 import "vendor:sdl2"
-
-import "risc5"
 
 BLACK :: 0x657b83
 WHITE :: 0xfdf6e3
@@ -15,13 +13,13 @@ MAX_HEIGHT :: 2048
 
 main :: proc() {
 
-	risc := risc5.create()
+	risc := risc_new()
 
 	fullscreen: bool = false
 	zoom: f64 = 0
 	risc_rect: sdl2.Rect = sdl2.Rect {
-		w = risc5.RISC_FRAMEBUFFER_WIDTH,
-		h = risc5.RISC_FRAMEBUFFER_HEIGHT,
+		w = RISC_FRAMEBUFFER_WIDTH,
+		h = RISC_FRAMEBUFFER_HEIGHT,
 	}
 
 	if sdl2.Init(sdl2.INIT_VIDEO) != 0 {
@@ -90,7 +88,7 @@ main :: proc() {
 	display_rect: sdl2.Rect
 	display_scale := scale_display(window, &risc_rect, &display_rect)
 
-	update_texture(&risc, texture, &risc_rect)
+	update_texture(risc, texture, &risc_rect)
 	sdl2.ShowWindow(window)
 	sdl2.RenderClear(renderer)
 	sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
@@ -115,7 +113,7 @@ main :: proc() {
 			}
 		}
 
-		update_texture(&risc, texture, &risc_rect)
+		update_texture(risc, texture, &risc_rect)
 		sdl2.RenderClear(renderer)
 		sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
 		sdl2.RenderPresent(renderer)
@@ -176,15 +174,15 @@ scale_display :: proc(
 
 pixel_buf: [MAX_WIDTH * MAX_HEIGHT]u32
 
-update_texture :: proc(risc: ^risc5.RISC, texture: ^sdl2.Texture, risc_rect: ^sdl2.Rect) {
+update_texture :: proc(risc: ^RISC, texture: ^sdl2.Texture, risc_rect: ^sdl2.Rect) {
 
-	damage: risc5.Damage = risc5.get_framebuffer_damage(risc)
+	damage: Damage = risc_get_framebuffer_damage(risc)
 	if damage.y1 <= damage.y2 {
 		out_idx := 0
-		for line := damage.y2; line >= damage.y1; line -= 1 {
-			line_start := line * risc_rect.w / 32
-			for col := damage.x1; col <= damage.x2; col += 1 {
-				pixels := risc5.get_framebuffer(risc, line_start + col)
+		for line: i32 = i32(damage.y2); line >= i32(damage.y1); line -= 1 {
+			line_start: u32 = u32(line) * u32(risc_rect.w) / 32
+			for col: u32 = damage.x1; col <= damage.x2; col += 1 {
+				pixels := risc_get_framebuffer(risc, line_start + col)
 				for b := 0; b < 32; b += 1 {
 					pixel_buf[out_idx] = WHITE if (pixels & 1 == 1) else BLACK
 					pixels >>= 1
@@ -195,10 +193,10 @@ update_texture :: proc(risc: ^risc5.RISC, texture: ^sdl2.Texture, risc_rect: ^sd
 	}
 
 	rect: sdl2.Rect = {
-		x = damage.x1 * 32,
-		y = risc_rect.h - damage.y2 - 1,
-		w = (damage.x2 - damage.x1 + 1) * 32,
-		h = (damage.y2 - damage.y1 + 1),
+		x = i32(damage.x1) * 32,
+		y = i32(risc_rect.h) - i32(damage.y2) - 1,
+		w = (i32(damage.x2) - i32(damage.x1) + 1) * 32,
+		h = (i32(damage.y2) - i32(damage.y1) + 1),
 	}
 	sdl2.UpdateTexture(texture, &rect, raw_data(&pixel_buf), rect.w * 4)
 }
