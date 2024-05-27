@@ -46,6 +46,25 @@ RISC :: struct {
 	ROM:           [ROMWords]u32,
 }
 
+Opcodes :: enum {
+	MOV,
+	LSL,
+	ASR,
+	ROR,
+	AND,
+	ANN,
+	IOR,
+	XOR,
+	ADD,
+	SUB,
+	MUL,
+	DIV,
+	FAD,
+	FSB,
+	FML,
+	FDV,
+}
+
 risc_new :: proc() -> ^RISC {
 	risc := new(RISC)
 	risc.mem_size = DefaultMemSize
@@ -130,6 +149,145 @@ risc_single_step :: proc(risc: ^RISC) {
 		risc_reset(risc)
 		return
 	}
+	risc.PC += 1
+
+	pbit: u32 : 0x80000000
+	qbit: u32 : 0x40000000
+	ubit: u32 : 0x20000000
+	vbit: u32 : 0x10000000
+
+	if (ir & pbit) == 0 {
+		// Register instructions
+		a: u32 = (ir & 0x0F000000) >> 24
+		b: u32 = (ir & 0x00F00000) >> 20
+		op := Opcodes((ir & 0x000F0000) >> 16)
+		im: u32 = ir & 0x0000FFFF
+		c: u32 = ir & 0x0000000F
+
+		a_val, b_val, c_val: u32
+		if (ir & qbit) == 0 {
+			c_val = risc.R[c]
+		} else if (ir & vbit) == 0 {
+			c_val = im
+		} else {
+			c_val = 0xFFFF0000 | im
+		}
+
+		switch (op) {
+		case .MOV:
+			{
+				if (ir & ubit) == 0 {
+					a_val = c_val
+				} else if (ir & qbit) != 0 {
+					a_val = c_val << 16
+				} else if (ir & vbit) != 0 {
+					a_val =
+						0xD0 |
+						(u32(risc.N) * 0x80000000) |
+						(u32(risc.Z) * 0x40000000) |
+						(u32(risc.C) * 0x20000000) |
+						(u32(risc.V) * 0x10000000) // ???
+				} else {
+					a_val = risc.H
+				}
+			}
+		case .LSL:
+			{
+				a_val = b_val << (c_val & 31)
+			}
+		case .ASR:
+			{
+				a_val = u32(i32(b_val) >> (c_val & 31))
+			}
+		case .ROR:
+			{
+				a_val = (b_val >> (c_val & 31)) | (b_val << (-c_val & 31))
+			}
+		case .AND:
+			{
+				a_val = b_val & c_val
+			}
+		case .ANN:
+			{
+				a_val = b_val & ~c_val
+			}
+		case .IOR:
+			{
+				a_val = b_val | c_val
+			}
+		case .XOR:
+			{
+				a_val = b_val ~ c_val
+			}
+		case .ADD:
+			{
+				a_val = b_val + c_val
+				if (ir & ubit) != 0 {
+					a_val += u32(risc.C)
+				}
+				risc.C = a_val < b_val
+				risc.V = bool(((a_val ~ c_val) & (a_val ~ b_val)) >> 31)
+			}
+		case .SUB:
+			{
+				a_val = b_val - c_val
+				if (ir & ubit) != 0 {
+					a_val -= u32(risc.C)
+				}
+				risc.C = a_val > b_val
+				risc.V = bool(((b_val ~ c_val) & (a_val ~ b_val)) >> 31)
+			}
+		case .MUL:
+			{
+				tmp: u64
+				if (ir & ubit) == 0 {
+					tmp = u64(i64(b_val) * i64(c_val))
+				} else {
+					tmp = u64(b_val) * u64(c_val)
+				}
+				a_val = u32(tmp)
+				risc.H = u32(tmp >> 32)
+			}
+		case .DIV:
+			{
+				if c_val > 0 {
+					if (ir & ubit) == 0 {
+						a_val = b_val / c_val
+						risc.H = b_val % c_val
+						if (risc.H < 0) {
+							a_val -= 1
+							risc.H += c_val
+						}
+					} else {
+						a_val = b_val / c_val
+						risc.H = b_val % c_val
+					}
+				} else {
+					a_val, risc.H = idiv(b_val, c_val, bool(ir & ubit))
+
+				}
+			}
+		case .FAD:
+			{
+				a_val = fp_add(b_val, c_val, bool(ir & ubit), bool(ir & vbit))
+			}
+		case .FSB:
+			{
+				a_val = fp_add(b_val, c_val ~ 0x80000000, bool(ir & ubit), bool(ir & vbit))
+			}
+		case .FML:
+			{
+				a_val = fp_mul(b_val, c_val)
+			}
+		case .FDV:
+			{
+				a_val = fp_div(b_val, c_val)
+			}
+		}
+
+
+	}
+
 }
 
 risc_get_framebuffer_damage :: proc(risc: ^RISC) -> Damage {

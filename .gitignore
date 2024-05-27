@@ -1,2 +1,4 @@
 /.clangd
 /risc.bin
+/src.bin
+/risc
