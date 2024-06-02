@@ -174,15 +174,17 @@ scale_display :: proc(
 
 pixel_buf: [MAX_WIDTH * MAX_HEIGHT]u32
 
-update_texture :: proc(risc: ^RISC, texture: ^sdl2.Texture, risc_rect: ^sdl2.Rect) {
+update_texture :: proc(risc: pRISC, texture: ^sdl2.Texture, risc_rect: ^sdl2.Rect) {
 
 	damage: Damage = risc_get_framebuffer_damage(risc)
 	if damage.y1 <= damage.y2 {
+		inpixels: [^]u32 = risc_get_framebuffer_ptr(risc)
 		out_idx := 0
-		for line: i32 = i32(damage.y2); line >= i32(damage.y1); line -= 1 {
-			line_start: u32 = u32(line) * u32(risc_rect.w) / 32
-			for col: u32 = damage.x1; col <= damage.x2; col += 1 {
-				pixels := risc_get_framebuffer(risc, line_start + col)
+
+		for line: i32 = damage.y2; line >= damage.y1; line -= 1 {
+			line_start: i32 = line * risc_rect.w / 32
+			for col: i32 = damage.x1; col <= damage.x2; col += 1 {
+				pixels := inpixels[line_start + col]
 				for b := 0; b < 32; b += 1 {
 					pixel_buf[out_idx] = WHITE if (pixels & 1 == 1) else BLACK
 					pixels >>= 1
