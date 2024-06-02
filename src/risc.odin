@@ -16,13 +16,17 @@ pRISC_Clipboard :: rawptr
 
 Damage :: struct {
 	x1: c.int,
-	y1: c.int,
 	x2: c.int,
+	y1: c.int,
 	y2: c.int,
 }
 
 @(default_calling_convention = "c")
 foreign risc_clib {
+
+	///////////////////////////////////////////////////////////////
+	// risc.h
+	///////////////////////////////////////////////////////////////
 
 	// struct RISC *risc_new(void);
 	risc_new :: proc() -> pRISC ---
@@ -56,5 +60,12 @@ foreign risc_clib {
 	risc_get_framebuffer_ptr :: proc(risc: pRISC) -> [^]u32 ---
 	// struct Damage risc_get_framebuffer_damage(struct RISC *risc);
 	risc_get_framebuffer_damage :: proc(risc: pRISC) -> Damage ---
+
+	///////////////////////////////////////////////////////////////
+	// disk.h
+	///////////////////////////////////////////////////////////////
+
+	// struct RISC_SPI *disk_new(const char *filename);
+	disk_new :: proc(filename: cstring) -> pRISC_SPI ---
 
 }

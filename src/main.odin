@@ -3,7 +3,11 @@ package risc
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:strings"
 import "vendor:sdl2"
+
+CPU_HZ :: 25000000
+FPS :: 60
 
 BLACK :: 0x657b83
 WHITE :: 0xfdf6e3
@@ -22,6 +26,8 @@ main :: proc() {
 		h = RISC_FRAMEBUFFER_HEIGHT,
 	}
 
+	filename := strings.clone_to_cstring("original/DiskImage/Oberon-2020-08-18.dsk")
+	risc_set_spi(risc, 1, disk_new(filename))
 	if sdl2.Init(sdl2.INIT_VIDEO) != 0 {
 		fmt.printf("Unable to initialize SDL: %s", sdl2.GetError())
 		os.exit(1)
@@ -96,6 +102,7 @@ main :: proc() {
 
 	done: bool = false
 	for !done {
+		frame_start := i32(sdl2.GetTicks())
 
 		event: sdl2.Event
 		evloop: for sdl2.PollEvent(&event) {
@@ -112,6 +119,9 @@ main :: proc() {
 
 			}
 		}
+
+		risc_set_time(risc, frame_start)
+		risc_run(risc, CPU_HZ / FPS)
 
 		update_texture(risc, texture, &risc_rect)
 		sdl2.RenderClear(renderer)
@@ -178,7 +188,7 @@ update_texture :: proc(risc: pRISC, texture: ^sdl2.Texture, risc_rect: ^sdl2.Rec
 
 	damage: Damage = risc_get_framebuffer_damage(risc)
 	if damage.y1 <= damage.y2 {
-		inpixels: [^]u32 = risc_get_framebuffer_ptr(risc)
+		inpixels := risc_get_framebuffer_ptr(risc)
 		out_idx := 0
 
 		for line: i32 = damage.y2; line >= damage.y1; line -= 1 {

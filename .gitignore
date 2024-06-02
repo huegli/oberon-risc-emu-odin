@@ -3,3 +3,5 @@
 /src.bin
 /risc
 /librisc.a
+/.DS_Store
+/src.bin.dSYM
