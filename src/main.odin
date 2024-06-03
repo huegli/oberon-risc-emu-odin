@@ -16,31 +16,47 @@ MAX_WIDTH :: 2048
 MAX_HEIGHT :: 2048
 
 main :: proc() {
-
 	risc := risc_new()
+	// risc_set_serial(risc, &pclink)
+	// risc_set_clipboard(risc, &sdl_clipboard)
+
 
 	fullscreen: bool = false
-	zoom: f64 = 0
+	zoom: f64 = 1.2
 	risc_rect: sdl2.Rect = sdl2.Rect {
 		w = RISC_FRAMEBUFFER_WIDTH,
 		h = RISC_FRAMEBUFFER_HEIGHT,
 	}
+	size_option := false
+	mem_option := 0
+	serial_in: cstring = ""
+	serial_out: cstring = ""
+	boot_from_serial := false
 
-	filename := strings.clone_to_cstring("original/DiskImage/Oberon-2020-08-18.dsk")
+	filename: cstring = "original/DiskImage/Oberon-2020-08-18.dsk"
 	risc_set_spi(risc, 1, disk_new(filename))
+
+	if serial_in != "" || serial_out != "" {
+		if serial_in == "" {
+			serial_in = "/dev/null"
+		}
+		if serial_out == "" {
+			serial_out = "/dev/null"
+		}
+		risc_set_serial(risc, raw_serial_new(serial_in, serial_out))
+	}
+
 	if sdl2.Init(sdl2.INIT_VIDEO) != 0 {
 		fmt.printf("Unable to initialize SDL: %s", sdl2.GetError())
 		os.exit(1)
 	}
 	defer sdl2.Quit()
-
 	sdl2.EnableScreenSaver()
 	sdl2.ShowCursor(sdl2.DISABLE)
 	sdl2.SetHint(sdl2.HINT_RENDER_SCALE_QUALITY, "best")
 
 	window_flags := sdl2.WINDOW_HIDDEN
 	display: i32 = 0
-
 	if fullscreen {
 		window_flags |= sdl2.WINDOW_FULLSCREEN_DESKTOP
 		display = best_display(&risc_rect)
@@ -93,14 +109,14 @@ main :: proc() {
 
 	display_rect: sdl2.Rect
 	display_scale := scale_display(window, &risc_rect, &display_rect)
-
 	update_texture(risc, texture, &risc_rect)
 	sdl2.ShowWindow(window)
 	sdl2.RenderClear(renderer)
 	sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
 	sdl2.RenderPresent(renderer)
 
-	done: bool = false
+	done := false
+	mouse_was_offscreen := false
 	for !done {
 		frame_start := i32(sdl2.GetTicks())
 
@@ -110,7 +126,32 @@ main :: proc() {
 			#partial switch (event.type) {
 			case .QUIT:
 				done = true
-				break evloop
+
+			case .WINDOWEVENT:
+				{
+					if event.window.event == .RESIZED {
+						display_scale = scale_display(window, &risc_rect, &display_rect)
+					}
+				}
+
+			case .MOUSEMOTION:
+				{
+					scaled_x := i32(
+						math.round(f64(event.motion.x - display_rect.x) / display_scale),
+					)
+					scaled_y := i32(
+						math.round(f64(event.motion.y - display_rect.y) / display_scale),
+					)
+					x := clamp(scaled_x, 0, risc_rect.w - 1)
+					y := clamp(scaled_y, 0, risc_rect.h - 1)
+					mouse_is_offscreen := x != scaled_x || y != scaled_y
+					if mouse_is_offscreen != mouse_was_offscreen {
+						sdl2.ShowCursor(mouse_is_offscreen ? sdl2.ENABLE : sdl2.DISABLE)
+						mouse_was_offscreen = mouse_is_offscreen
+					}
+					risc_mouse_moved(risc, x, risc_rect.h - y - 1)
+				}
+
 			case .KEYDOWN:
 				if (event.key.keysym.sym == .ESCAPE) {
 					done = true
@@ -149,6 +190,16 @@ best_display :: proc(rect: ^sdl2.Rect) -> i32 {
 		}
 	}
 	return best
+}
+
+clamp :: proc(x, min, max: i32) -> i32 {
+	if x < min {
+		return min
+	} else if x > max {
+		return max
+	} else {
+		return x
+	}
 }
 
 scale_display :: proc(
