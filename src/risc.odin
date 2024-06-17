@@ -73,7 +73,7 @@ foreign risc_clib {
 	// void risc_mouse_moved(struct RISC *risc, int mouse_x, int mouse_y);
 	risc_mouse_moved :: proc(risc: pRISC, mouse_x: c.int, mouse_y: c.int) ---
 	// void risc_mouse_button(struct RISC *risc, int button, bool down);
-	risc_mouse_buuon :: proc(risc: pRISC, button: c.int, down: c.int) ---
+	risc_mouse_button :: proc(risc: pRISC, button: c.int, down: c.int) ---
 	// void risc_keyboard_input(struct RISC *risc, uint8_t *scancodes, uint32_t len);
 	risc_keyboard_input :: proc(risc: pRISC, scancodes: ^c.char, len: c.int) ---
 

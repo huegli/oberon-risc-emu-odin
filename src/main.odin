@@ -15,6 +15,35 @@ WHITE :: 0xfdf6e3
 MAX_WIDTH :: 2048
 MAX_HEIGHT :: 2048
 
+Action :: enum {
+	ACTION_OBERON_INPUT,
+	ACTION_QUIT,
+	ACTION_RESET,
+	ACTION_TOGGLE_FULLSCREEN,
+	ACTION_FAKE_MOUSE1,
+	ACTION_FAKE_MOUSE2,
+	ACTION_FAKE_MOUSE3,
+}
+
+KeyMapping :: struct {
+	state:  u8,
+	sym:    sdl2.Keycode,
+	mod:    sdl2.Keymod,
+	action: Action,
+}
+
+key_map := []KeyMapping {
+	{sdl2.PRESSED, sdl2.Keycode.F4, sdl2.KMOD_ALT, .ACTION_QUIT},
+	{sdl2.PRESSED, sdl2.Keycode.F12, sdl2.KMOD_NONE, .ACTION_RESET},
+	{sdl2.PRESSED, sdl2.Keycode.DELETE, sdl2.KMOD_CTRL | sdl2.KMOD_SHIFT, .ACTION_RESET},
+	{sdl2.PRESSED, sdl2.Keycode.F11, sdl2.KMOD_NONE, .ACTION_TOGGLE_FULLSCREEN},
+	{sdl2.PRESSED, sdl2.Keycode.RETURN, sdl2.KMOD_ALT, .ACTION_TOGGLE_FULLSCREEN},
+	{sdl2.PRESSED, sdl2.Keycode.F, sdl2.KMOD_GUI | sdl2.KMOD_SHIFT, .ACTION_TOGGLE_FULLSCREEN},
+	{sdl2.PRESSED, sdl2.Keycode.LALT, sdl2.KMOD_NONE, .ACTION_FAKE_MOUSE2},
+	{sdl2.RELEASED, sdl2.Keycode.LALT, sdl2.KMOD_NONE, .ACTION_FAKE_MOUSE2},
+}
+
+
 main :: proc() {
 	risc := risc_new()
 	// risc_set_serial(risc, &pclink)
@@ -96,7 +125,7 @@ main :: proc() {
 
 	texture: ^sdl2.Texture = sdl2.CreateTexture(
 		renderer,
-		u32(sdl2.PixelFormatEnum.ARGB8888),
+		sdl2.PixelFormatEnum.ARGB8888,
 		sdl2.TextureAccess.STREAMING,
 		risc_rect.w,
 		risc_rect.h,
@@ -128,36 +157,64 @@ main :: proc() {
 				done = true
 
 			case .WINDOWEVENT:
-				{
-					if event.window.event == .RESIZED {
-						display_scale = scale_display(window, &risc_rect, &display_rect)
-					}
+				if event.window.event == .RESIZED {
+					display_scale = scale_display(window, &risc_rect, &display_rect)
 				}
 
 			case .MOUSEMOTION:
-				{
-					scaled_x := i32(
-						math.round(f64(event.motion.x - display_rect.x) / display_scale),
-					)
-					scaled_y := i32(
-						math.round(f64(event.motion.y - display_rect.y) / display_scale),
-					)
-					x := clamp(scaled_x, 0, risc_rect.w - 1)
-					y := clamp(scaled_y, 0, risc_rect.h - 1)
-					mouse_is_offscreen := x != scaled_x || y != scaled_y
-					if mouse_is_offscreen != mouse_was_offscreen {
-						sdl2.ShowCursor(mouse_is_offscreen ? sdl2.ENABLE : sdl2.DISABLE)
-						mouse_was_offscreen = mouse_is_offscreen
+				scaled_x := i32(math.round(f64(event.motion.x - display_rect.x) / display_scale))
+				scaled_y := i32(math.round(f64(event.motion.y - display_rect.y) / display_scale))
+				x := clamp(scaled_x, 0, risc_rect.w - 1)
+				y := clamp(scaled_y, 0, risc_rect.h - 1)
+				mouse_is_offscreen := x != scaled_x || y != scaled_y
+				if mouse_is_offscreen != mouse_was_offscreen {
+					sdl2.ShowCursor(mouse_is_offscreen ? sdl2.ENABLE : sdl2.DISABLE)
+					mouse_was_offscreen = mouse_is_offscreen
+				}
+				risc_mouse_moved(risc, x, risc_rect.h - y - 1)
+
+			case .MOUSEBUTTONDOWN, .MOUSEBUTTONUP:
+				down := event.button.state == sdl2.PRESSED
+				risc_mouse_button(
+					risc,
+					i32(event.button.button),
+					down ? sdl2.ENABLE : sdl2.DISABLE,
+				)
+
+			case .KEYDOWN, .KEYUP:
+				down := event.key.state == sdl2.PRESSED
+				#partial switch (map_keyboard_event(&event.key)) {
+				case .ACTION_RESET:
+					risc_reset(risc)
+
+				case .ACTION_TOGGLE_FULLSCREEN:
+					fullscreen = !fullscreen
+					if fullscreen {
+						sdl2.SetWindowFullscreen(window, sdl2.WINDOW_FULLSCREEN_DESKTOP)
+					} else {
+						sdl2.SetWindowFullscreen(window, sdl2.WINDOW_SHOWN)
 					}
-					risc_mouse_moved(risc, x, risc_rect.h - y - 1)
-				}
 
-			case .KEYDOWN:
-				if (event.key.keysym.sym == .ESCAPE) {
-					done = true
-					break evloop
-				}
+				case .ACTION_QUIT:
+					quit := sdl2.Event {
+						type = .QUIT,
+					}
+					sdl2.PushEvent(&quit)
 
+				case .ACTION_FAKE_MOUSE1:
+					risc_mouse_button(risc, 1, down ? sdl2.ENABLE : sdl2.DISABLE)
+
+				case .ACTION_FAKE_MOUSE2:
+					risc_mouse_button(risc, 2, down ? sdl2.ENABLE : sdl2.DISABLE)
+
+				case .ACTION_FAKE_MOUSE3:
+					risc_mouse_button(risc, 3, down ? sdl2.ENABLE : sdl2.DISABLE)
+
+				case .ACTION_OBERON_INPUT:
+					// ps2_bytes: [MAX_PS2_CODE_LEN]u8
+					ps2_bytes := ps2_encode(event.key.keysym.scancode, down)
+					risc_keyboard_input(risc, raw_data(ps2_bytes), i32(len(ps2_bytes)))
+				}
 			}
 		}
 
@@ -200,6 +257,17 @@ clamp :: proc(x, min, max: i32) -> i32 {
 	} else {
 		return x
 	}
+}
+
+map_keyboard_event :: proc(event: ^sdl2.KeyboardEvent) -> Action {
+	for i := 0; i < len(key_map); i += 1 {
+		if (event.state == key_map[i].state) &&
+		   (event.keysym.sym == key_map[i].sym) &&
+		   (event.keysym.mod == key_map[i].mod) {
+			return key_map[i].action
+		}
+	}
+	return .ACTION_OBERON_INPUT
 }
 
 scale_display :: proc(
