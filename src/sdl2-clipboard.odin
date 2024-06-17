@@ -11,7 +11,7 @@ State :: enum {
 }
 
 state := State.IDLE
-data: [dynamic]u8
+data := make([dynamic]u8, 0, c.UINT32_MAX)
 data_ptr: u32
 data_len: u32
 
