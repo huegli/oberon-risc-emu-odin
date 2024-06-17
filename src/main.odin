@@ -46,8 +46,8 @@ key_map := []KeyMapping {
 
 main :: proc() {
 	risc := risc_new()
-	// risc_set_serial(risc, &pclink)
-	// risc_set_clipboard(risc, &sdl_clipboard)
+	risc_set_serial(risc, &pclink)
+	risc_set_clipboard(risc, &sdl_clipboard)
 
 
 	fullscreen: bool = false
