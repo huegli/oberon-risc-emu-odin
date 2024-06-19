@@ -3,6 +3,7 @@ package risc
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import "vendor:sdl2"
 
@@ -39,31 +40,102 @@ key_map := []KeyMapping {
 	{sdl2.PRESSED, sdl2.Keycode.F11, sdl2.KMOD_NONE, .ACTION_TOGGLE_FULLSCREEN},
 	{sdl2.PRESSED, sdl2.Keycode.RETURN, sdl2.KMOD_ALT, .ACTION_TOGGLE_FULLSCREEN},
 	{sdl2.PRESSED, sdl2.Keycode.F, sdl2.KMOD_GUI | sdl2.KMOD_SHIFT, .ACTION_TOGGLE_FULLSCREEN},
-	{sdl2.PRESSED, sdl2.Keycode.LALT, sdl2.KMOD_NONE, .ACTION_FAKE_MOUSE2},
+	{sdl2.PRESSED, sdl2.Keycode.LALT, sdl2.KMOD_LALT, .ACTION_FAKE_MOUSE2},
 	{sdl2.RELEASED, sdl2.Keycode.LALT, sdl2.KMOD_NONE, .ACTION_FAKE_MOUSE2},
 }
 
+usage :: proc() {
+	fmt.printf("Usage: %s [OPTIONS] DISK-IMAGE\n", os.args[0])
+	fmt.printf("\n")
+	fmt.printf("Options:\n")
+	fmt.printf("--fullscreen             Start in fullscreen mode\n")
+	fmt.printf("--zoom=<factor>          Set zoom factor\n")
+	fmt.printf("--leds                   Show LEDs\n")
+	fmt.printf("--mem=<size>             Set memory size (in MB)\n")
+	fmt.printf("--size=<width>x<height>  Set screen size\n")
+	fmt.printf("--boot-from-serial       Boot from serial port\n")
+	fmt.printf("--serial-in=<filename>   Read serial input from file\n")
+	fmt.printf("--serial-out=<filename>  Write serial output to file\n")
+	os.exit(1)
+}
 
 main :: proc() {
 	risc := risc_new()
 	risc_set_serial(risc, &pclink)
 	risc_set_clipboard(risc, &sdl_clipboard)
 
+	leds := RISC_LED {
+		write = show_leds,
+	}
 
 	fullscreen: bool = false
-	zoom: f64 = 1.2
+	zoom: f64 = 0.0
 	risc_rect: sdl2.Rect = sdl2.Rect {
 		w = RISC_FRAMEBUFFER_WIDTH,
 		h = RISC_FRAMEBUFFER_HEIGHT,
 	}
 	size_option := false
-	mem_option := 0
+	mem_option: i32 = 0
 	serial_in: cstring = ""
 	serial_out: cstring = ""
 	boot_from_serial := false
 
-	filename: cstring = "original/DiskImage/Oberon-2020-08-18.dsk"
-	risc_set_spi(risc, 1, disk_new(filename))
+	arguments := os.args[1:]
+	arg_cnt := len(arguments)
+	if arg_cnt == 0 {
+		usage()
+	}
+
+	filename: cstring
+	if !strings.has_prefix(arguments[arg_cnt - 1], "-") {
+		filename = strings.clone_to_cstring(arguments[arg_cnt - 1])
+		arg_cnt -= 1
+	}
+
+	for arg in arguments[:arg_cnt] {
+		if arg == "-f" || arg == "--fullscreen" {
+			fullscreen = true
+		} else if arg == "-L" || arg == "--leds" {
+			risc_set_leds(risc, &leds)
+		} else if strings.has_prefix(arg, "-z") || strings.has_prefix(arg, "--zoom") {
+			res, _ := strings.split(arg, "=")
+			zoom, _ = strconv.parse_f64(res[1])
+		} else if strings.has_prefix(arg, "-s") || strings.has_prefix(arg, "--size") {
+			size_option = true
+			size, _ := strings.split(arg, "=")
+			d, _ := strings.split(size[1], "x")
+			w, _ := strconv.parse_int(d[0])
+			h, _ := strconv.parse_int(d[1])
+			risc_rect.w = clamp(i32(w), 32, MAX_WIDTH) & 0xffe0
+			risc_rect.h = clamp(i32(h), 32, MAX_HEIGHT)
+		} else if strings.has_prefix(arg, "-m") || strings.has_prefix(arg, "--mem") {
+			mv, _ := strings.split(arg, "=")
+			m, _ := strconv.parse_int(mv[1])
+			mem_option = i32(m)
+		} else if strings.has_prefix(arg, "-I") || strings.has_prefix(arg, "--serial-in") {
+			s, _ := strings.split(arg, "=")
+			serial_in = strings.clone_to_cstring(s[1])
+		} else if strings.has_prefix(arg, "-O") || strings.has_prefix(arg, "--serial-out") {
+			s, _ := strings.split(arg, "=")
+			serial_out = strings.clone_to_cstring(s[1])
+		} else if arg == "-S" || arg == "--boot-from-serial" {
+			boot_from_serial = true
+			risc_set_switches(risc, 1)
+		}
+	}
+
+	if (mem_option > 0 || size_option) {
+		risc_configure_memory(risc, mem_option, risc_rect.w, risc_rect.h)
+	}
+
+	if len(filename) > 0 {
+		risc_set_spi(risc, 1, disk_new(filename))
+	} else if boot_from_serial {
+		// Allow diskless boot
+		risc_set_spi(risc, 1, disk_new(nil))
+	} else {
+		usage()
+	}
 
 	if serial_in != "" || serial_out != "" {
 		if serial_in == "" {
@@ -211,7 +283,6 @@ main :: proc() {
 					risc_mouse_button(risc, 3, down ? sdl2.ENABLE : sdl2.DISABLE)
 
 				case .ACTION_OBERON_INPUT:
-					// ps2_bytes: [MAX_PS2_CODE_LEN]u8
 					ps2_bytes := ps2_encode(event.key.keysym.scancode, down)
 					risc_keyboard_input(risc, raw_data(ps2_bytes), i32(len(ps2_bytes)))
 				}
@@ -226,10 +297,12 @@ main :: proc() {
 		sdl2.RenderCopy(renderer, texture, &risc_rect, &display_rect)
 		sdl2.RenderPresent(renderer)
 
-		sdl2.Delay(1000 / 60)
+		frame_end := sdl2.GetTicks()
+		delay: i32 = frame_start + 1000 / FPS - i32(frame_end)
+		if (delay > 0) {
+			sdl2.Delay(u32(delay))
+		}
 	}
-
-
 }
 
 best_display :: proc(rect: ^sdl2.Rect) -> i32 {
@@ -268,6 +341,18 @@ map_keyboard_event :: proc(event: ^sdl2.KeyboardEvent) -> Action {
 		}
 	}
 	return .ACTION_OBERON_INPUT
+}
+
+show_leds :: proc(leds: ^RISC_LED, value: u32) {
+	fmt.printf("LED: ")
+	for i := 7; i >= 0; i -= 1 {
+		if value & (1 << u32(i)) == 1 {
+			fmt.printf("%d", i)
+		} else {
+			fmt.printf("-")
+		}
+	}
+	fmt.printf("\n")
 }
 
 scale_display :: proc(
