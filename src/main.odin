@@ -197,7 +197,7 @@ main :: proc() {
 
 	texture: ^sdl2.Texture = sdl2.CreateTexture(
 		renderer,
-		sdl2.PixelFormatEnum.ARGB8888,
+		u32(sdl2.PixelFormatEnum.ARGB8888),
 		sdl2.TextureAccess.STREAMING,
 		risc_rect.w,
 		risc_rect.h,

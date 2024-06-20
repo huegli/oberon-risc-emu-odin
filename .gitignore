@@ -5,3 +5,5 @@
 /librisc.a
 /.DS_Store
 /src.bin.dSYM
+/risc.dSYM/Contents/Info.plist
+/risc.dSYM
