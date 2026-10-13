@@ -24,6 +24,8 @@ Action :: enum {
 	ACTION_FAKE_MOUSE1,
 	ACTION_FAKE_MOUSE2,
 	ACTION_FAKE_MOUSE3,
+	ACTION_SAVE,
+	ACTION_LOAD,
 }
 
 KeyMapping :: struct {
@@ -42,6 +44,8 @@ key_map := []KeyMapping {
 	{sdl2.PRESSED, sdl2.Keycode.F, sdl2.KMOD_GUI | sdl2.KMOD_SHIFT, .ACTION_TOGGLE_FULLSCREEN},
 	{sdl2.PRESSED, sdl2.Keycode.LALT, sdl2.KMOD_LALT, .ACTION_FAKE_MOUSE2},
 	{sdl2.RELEASED, sdl2.Keycode.LALT, sdl2.KMOD_NONE, .ACTION_FAKE_MOUSE2},
+	{sdl2.PRESSED, sdl2.Keycode.F2, sdl2.KMOD_NONE, .ACTION_SAVE},
+	{sdl2.PRESSED, sdl2.Keycode.F3, sdl2.KMOD_NONE, .ACTION_LOAD},
 }
 
 usage :: proc() {
@@ -281,6 +285,12 @@ main :: proc() {
 
 				case .ACTION_FAKE_MOUSE3:
 					risc_mouse_button(risc, 3, down ? sdl2.ENABLE : sdl2.DISABLE)
+
+				case .ACTION_SAVE:
+					PCLink_save()
+
+				case .ACTION_LOAD:
+					PCLink_load()
 
 				case .ACTION_OBERON_INPUT:
 					ps2_bytes := ps2_encode(event.key.keysym.scancode, down)

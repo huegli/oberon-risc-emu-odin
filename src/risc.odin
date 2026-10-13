@@ -107,15 +107,3 @@ foreign risc_clib {
 	raw_serial_new :: proc(filename_in: cstring, filename_out: cstring) -> ^RISC_Serial ---
 
 }
-
-///////////////////////////////////////////////////////////////
-// pclink.h
-///////////////////////////////////////////////////////////////
-
-@(default_calling_convention = "c")
-foreign risc_clib {
-
-	// extern const struct RISC_Serial pclink;
-	pclink: RISC_Serial
-
-}
